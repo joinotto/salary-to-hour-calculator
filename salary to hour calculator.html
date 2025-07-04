@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Salary Calculator</title>
+    <!-- Dependencies (Tailwind CSS, Font Awesome) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        /* Basic font smoothing for better text rendering */
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@19.1.0",
+        "react-dom/client": "https://esm.sh/react-dom@19.1.0/client"
+      }
+    }
+    </script>
+</head>
+<body>
+
+    <!-- This is the root container for your embeddable app -->
+    <div id="salary-calculator-root"></div>
+
+    <!-- The entire React application logic is contained within this script -->
+    <script type="module">
+        import React, { useState, useCallback, useEffect } from 'react';
+        import ReactDOM from 'react-dom/client';
+
+        // --- All Application Code (Types, Constants, Utils, Components) ---
+
+        // From types.ts (as a JS object)
+        const SalaryFrequency = {
+            HOURLY: 'Hour',
+            DAILY: 'Daily',
+            WEEKLY: 'Weekly',
+            BIWEEKLY: 'Bi-weekly',
+            SEMI_MONTHLY: 'Semi-monthly',
+            MONTHLY: 'Monthly',
+            QUARTERLY: 'Quarterly',
+            ANNUAL: 'Annual',
+        };
+
+        // From constants.ts
+        const DEFAULT_SALARY_AMOUNT = 50;
+        const DEFAULT_FREQUENCY = SalaryFrequency.HOURLY;
+        const DEFAULT_HOURS_PER_WEEK = 40;
+        const DEFAULT_DAYS_PER_WEEK = 5;
+        const DEFAULT_HOLIDAYS_PER_YEAR = 10;
+        const DEFAULT_VACATION_DAYS_PER_YEAR = 15;
+        const WEEKS_PER_YEAR = 52;
+        const MONTHS_PER_YEAR = 12;
+        const BI_WEEKS_PER_YEAR = 26;
+        const SEMI_MONTHS_PER_YEAR = 24;
+        const QUARTERS_PER_YEAR = 4;
+        const FREQUENCY_OPTIONS = Object.values(SalaryFrequency);
+        const SUPPORTED_CURRENCIES = [
+            { code: 'USD', name: 'United States Dollar', symbol: '$' },
+            { code: 'EUR', name: 'Euro', symbol: '€' },
+            { code: 'JPY', name: 'Japanese Yen', symbol: '¥' },
+            { code: 'GBP', name: 'British Pound Sterling', symbol: '£' },
+            { code: 'AUD', name: 'Australian Dollar', symbol: 'A$' },
+            { code: 'CAD', name: 'Canadian Dollar', symbol: 'C$' },
+            { code: 'CHF', name: 'Swiss Franc', symbol: 'Fr' },
+            { code: 'CNY', name: 'Chinese Yuan', symbol: '¥' },
+            { code: 'SEK', name: 'Swedish Krona', symbol: 'kr' },
+            { code: 'NZD', name: 'New Zealand Dollar', symbol: 'NZ$' },
+            { code: 'INR', name: 'Indian Rupee', symbol: '₹' },
+            { code: 'BRL', name: 'Brazilian Real', symbol: 'R$' },
+            { code: 'RUB', name: 'Russian Ruble', symbol: '₽' },
+            { code: 'ZAR', name: 'South African Rand', symbol: 'R' },
+        ];
+        const DEFAULT_CURRENCY = SUPPORTED_CURRENCIES[0];
+
+        // From utils.ts
+        const formatCurrency = (value, currencyCode = 'USD') => {
+            if (isNaN(value) || !isFinite(value)) {
+                value = 0;
+            }
+            try {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: currencyCode,
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                }).format(value);
+            } catch (error) {
+                console.error(`Invalid currency code: ${currencyCode}. Falling back to USD.`);
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                }).format(value);
+            }
+        };
+        
+        // From components/ResultsTable.tsx
+        const ResultsTable = ({ results, currencyCode }) => {
+            return (
+                React.createElement('div', { className: "overflow-x-auto" },
+                    React.createElement('table', { className: "w-full text-sm text-left" },
+                        React.createElement('thead', { style: { backgroundColor: '#233ED9' }, className: "text-xs text-white uppercase" },
+                            React.createElement('tr', null,
+                                React.createElement('th', { scope: "col", className: "px-4 py-3" }, '\u00A0'),
+                                React.createElement('th', { scope: "col", className: "px-4 py-3 text-right" }, 'Unadjusted'),
+                                React.createElement('th', { scope: "col", className: "px-4 py-3 text-right" }, 'Holidays & vacation days adjusted')
+                            )
+                        ),
+                        React.createElement('tbody', null,
+                            FREQUENCY_OPTIONS.map((freq, index) => (
+                                React.createElement('tr', { key: freq, style: { backgroundColor: index % 2 === 0 ? 'white' : '#F8F9FC' }, className: 'border-b' },
+                                    React.createElement('th', { scope: "row", className: "px-4 py-3 font-medium whitespace-nowrap", style: { color: '#101323' } }, freq),
+                                    React.createElement('td', { className: "px-4 py-3 text-right font-mono", style: { color: '#363F72' } }, formatCurrency(results.unadjusted[freq], currencyCode)),
+                                    React.createElement('td', { className: "px-4 py-3 text-right font-mono", style: { color: '#363F72' } }, formatCurrency(results.adjusted[freq], currencyCode))
+                                )
+                            ))
+                        )
+                    )
+                )
+            );
+        };
+
+        // Helper component from App.tsx
+        const InputRow = ({ label, value, onChange }) => (
+            React.createElement('div', { className: "flex items-center justify-between" },
+                React.createElement('label', { htmlFor: label, className: "text-sm", style: { color: '#3E4784' } }, label),
+                React.createElement('input', {
+                    id: label,
+                    type: "number",
+                    value: value,
+                    onChange: onChange,
+                    className: "w-28 p-1 border text-white rounded-sm text-right",
+                    style: { backgroundColor: '#293056', borderColor: '#3E4784' },
+                    min: "0"
+                })
+            )
+        );
+
+        // Main App component from App.tsx
+        const App = () => {
+            const [salaryAmount, setSalaryAmount] = useState(DEFAULT_SALARY_AMOUNT);
+            const [frequency, setFrequency] = useState(DEFAULT_FREQUENCY);
+            const [hoursPerWeek, setHoursPerWeek] = useState(DEFAULT_HOURS_PER_WEEK);
+            const [daysPerWeek, setDaysPerWeek] = useState(DEFAULT_DAYS_PER_WEEK);
+            const [holidaysPerYear, setHolidaysPerYear] = useState(DEFAULT_HOLIDAYS_PER_YEAR);
+            const [vacationDaysPerYear, setVacationDaysPerYear] = useState(DEFAULT_VACATION_DAYS_PER_YEAR);
+            const [currency, setCurrency] = useState(DEFAULT_CURRENCY);
+            const [results, setResults] = useState(null);
+
+            const calculate = useCallback(() => {
+                const numAmount = Number(salaryAmount) || 0;
+                const numHoursPerWeek = Number(hoursPerWeek) || 0;
+                const numDaysPerWeek = Number(daysPerWeek) || 0;
+                const numHolidays = Number(holidaysPerYear) || 0;
+                const numVacationDays = Number(vacationDaysPerYear) || 0;
+
+                if (numAmount <= 0) {
+                    setResults(null);
+                    return;
+                }
+
+                let unadjustedAnnualSalary = 0;
+                switch (frequency) {
+                    case SalaryFrequency.HOURLY: unadjustedAnnualSalary = numAmount * numHoursPerWeek * WEEKS_PER_YEAR; break;
+                    case SalaryFrequency.DAILY: unadjustedAnnualSalary = numAmount * numDaysPerWeek * WEEKS_PER_YEAR; break;
+                    case SalaryFrequency.WEEKLY: unadjustedAnnualSalary = numAmount * WEEKS_PER_YEAR; break;
+                    case SalaryFrequency.BIWEEKLY: unadjustedAnnualSalary = numAmount * BI_WEEKS_PER_YEAR; break;
+                    case SalaryFrequency.SEMI_MONTHLY: unadjustedAnnualSalary = numAmount * SEMI_MONTHS_PER_YEAR; break;
+                    case SalaryFrequency.MONTHLY: unadjustedAnnualSalary = numAmount * MONTHS_PER_YEAR; break;
+                    case SalaryFrequency.QUARTERLY: unadjustedAnnualSalary = numAmount * QUARTERS_PER_YEAR; break;
+                    case SalaryFrequency.ANNUAL: unadjustedAnnualSalary = numAmount; break;
+                }
+
+                const unadjustedTotalDays = numDaysPerWeek * WEEKS_PER_YEAR;
+                const unadjustedTotalHours = numHoursPerWeek * WEEKS_PER_YEAR;
+                const unadjustedResults = {
+                    [SalaryFrequency.HOURLY]: unadjustedTotalHours > 0 ? unadjustedAnnualSalary / unadjustedTotalHours : 0,
+                    [SalaryFrequency.DAILY]: unadjustedTotalDays > 0 ? unadjustedAnnualSalary / unadjustedTotalDays : 0,
+                    [SalaryFrequency.WEEKLY]: unadjustedAnnualSalary / WEEKS_PER_YEAR,
+                    [SalaryFrequency.BIWEEKLY]: unadjustedAnnualSalary / BI_WEEKS_PER_YEAR,
+                    [SalaryFrequency.SEMI_MONTHLY]: unadjustedAnnualSalary / SEMI_MONTHS_PER_YEAR,
+                    [SalaryFrequency.MONTHLY]: unadjustedAnnualSalary / MONTHS_PER_YEAR,
+                    [SalaryFrequency.QUARTERLY]: unadjustedAnnualSalary / QUARTERS_PER_YEAR,
+                    [SalaryFrequency.ANNUAL]: unadjustedAnnualSalary,
+                };
+
+                const adjustedWorkDays = (numDaysPerWeek * WEEKS_PER_YEAR) - numHolidays - numVacationDays;
+                const adjustedWorkWeeks = numDaysPerWeek > 0 ? adjustedWorkDays / numDaysPerWeek : 0;
+                let weeklyRate = 0;
+                switch (frequency) {
+                    case SalaryFrequency.HOURLY: weeklyRate = numAmount * numHoursPerWeek; break;
+                    case SalaryFrequency.DAILY: weeklyRate = numAmount * numDaysPerWeek; break;
+                    case SalaryFrequency.WEEKLY: weeklyRate = numAmount; break;
+                    case SalaryFrequency.BIWEEKLY: weeklyRate = numAmount / 2; break;
+                    case SalaryFrequency.SEMI_MONTHLY: weeklyRate = (numAmount * SEMI_MONTHS_PER_YEAR) / WEEKS_PER_YEAR; break;
+                    case SalaryFrequency.MONTHLY: weeklyRate = (numAmount * MONTHS_PER_YEAR) / WEEKS_PER_YEAR; break;
+                    case SalaryFrequency.QUARTERLY: weeklyRate = (numAmount * QUARTERS_PER_YEAR) / WEEKS_PER_YEAR; break;
+                    case SalaryFrequency.ANNUAL: weeklyRate = numAmount / WEEKS_PER_YEAR; break;
+                }
+                const adjustedAnnualSalary = weeklyRate * adjustedWorkWeeks;
+                const adjustedResults = {
+                    [SalaryFrequency.HOURLY]: unadjustedTotalHours > 0 ? adjustedAnnualSalary / unadjustedTotalHours : 0,
+                    [SalaryFrequency.DAILY]: unadjustedTotalDays > 0 ? adjustedAnnualSalary / unadjustedTotalDays : 0,
+                    [SalaryFrequency.WEEKLY]: adjustedAnnualSalary / WEEKS_PER_YEAR,
+                    [SalaryFrequency.BIWEEKLY]: adjustedAnnualSalary / BI_WEEKS_PER_YEAR,
+                    [SalaryFrequency.SEMI_MONTHLY]: adjustedAnnualSalary / SEMI_MONTHS_PER_YEAR,
+                    [SalaryFrequency.MONTHLY]: adjustedAnnualSalary / MONTHS_PER_YEAR,
+                    [SalaryFrequency.QUARTERLY]: adjustedAnnualSalary / QUARTERS_PER_YEAR,
+                    [SalaryFrequency.ANNUAL]: adjustedAnnualSalary,
+                };
+
+                setResults({ unadjusted: unadjustedResults, adjusted: adjustedResults });
+            }, [salaryAmount, frequency, hoursPerWeek, daysPerWeek, holidaysPerYear, vacationDaysPerYear]);
+
+            const handleClear = () => {
+                setSalaryAmount('');
+                setFrequency(DEFAULT_FREQUENCY);
+                setHoursPerWeek(DEFAULT_HOURS_PER_WEEK);
+                setDaysPerWeek(DEFAULT_DAYS_PER_WEEK);
+                setHolidaysPerYear(DEFAULT_HOLIDAYS_PER_YEAR);
+                setVacationDaysPerYear(DEFAULT_VACATION_DAYS_PER_YEAR);
+                setCurrency(DEFAULT_CURRENCY);
+                setResults(null);
+            };
+
+            const handleInputChange = (setter) => (e) => {
+                setter(e.target.value);
+            };
+
+            useEffect(() => {
+                calculate();
+            }, [calculate, currency]);
+
+            return (
+                React.createElement('div', { className: "p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto font-sans", style: {backgroundColor: '#ECF5FF'} },
+                    React.createElement('div', { style: { backgroundColor: '#233ED9' }, className: "text-white p-2 text-sm rounded-t-md flex items-center" },
+                        React.createElement('i', { className: "fas fa-chevron-down mr-2" }),
+                        'Modify the values and click the Calculate button to use'
+                    ),
+                    React.createElement('div', { className: "grid grid-cols-1 lg:grid-cols-5 gap-6" },
+                        React.createElement('div', { className: "lg:col-span-2 p-4 space-y-4", style: { backgroundColor: '#F8F9FC' } },
+                            React.createElement('div', { className: "flex items-center justify-between" },
+                                React.createElement('label', { htmlFor: "currency", className: "text-sm", style: { color: '#3E4784' } }, 'Currency'),
+                                React.createElement('select', {
+                                    id: "currency",
+                                    value: currency.code,
+                                    onChange: (e) => {
+                                        const selectedCurrency = SUPPORTED_CURRENCIES.find(c => c.code === e.target.value);
+                                        if (selectedCurrency) setCurrency(selectedCurrency);
+                                    },
+                                    className: "w-48 p-1 border text-white rounded-sm",
+                                    style: { backgroundColor: '#293056', borderColor: '#3E4784' }
+                                }, SUPPORTED_CURRENCIES.map(c => React.createElement('option', { key: c.code, value: c.code }, `${c.name} (${c.symbol})`)))
+                            ),
+                            React.createElement('div', { className: "flex items-center justify-between" },
+                                React.createElement('label', { htmlFor: "salaryAmount", className: "text-sm", style: { color: '#3E4784' } }, 'Salary amount'),
+                                React.createElement('div', { className: "flex items-center space-x-2" },
+                                    React.createElement('div', { className: "relative" },
+                                        React.createElement('span', { className: "absolute inset-y-0 left-0 flex items-center pl-2", style: { color: '#9AC4FF' } }, currency.symbol),
+                                        React.createElement('input', {
+                                            id: "salaryAmount",
+                                            type: "number",
+                                            value: salaryAmount,
+                                            onChange: handleInputChange(setSalaryAmount),
+                                            className: "w-24 p-1 pl-5 border text-white rounded-sm text-right",
+                                            style: { backgroundColor: '#293056', borderColor: '#3E4784' }
+                                        })
+                                    ),
+                                    React.createElement('span', { className: "text-sm", style: { color: '#3E4784' } }, 'per'),
+                                    React.createElement('select', {
+                                        value: frequency,
+                                        onChange: (e) => setFrequency(e.target.value),
+                                        className: "p-1 border text-white rounded-sm",
+                                        style: { backgroundColor: '#293056', borderColor: '#3E4784' }
+                                    }, FREQUENCY_OPTIONS.map(opt => React.createElement('option', { key: opt, value: opt }, opt)))
+                                )
+                            ),
+                            React.createElement(InputRow, { label: "Hours per week", value: hoursPerWeek, onChange: handleInputChange(setHoursPerWeek) }),
+                            React.createElement(InputRow, { label: "Days per week", value: daysPerWeek, onChange: handleInputChange(setDaysPerWeek) }),
+                            React.createElement(InputRow, { label: "Holidays per year", value: holidaysPerYear, onChange: handleInputChange(setHolidaysPerYear) }),
+                            React.createElement(InputRow, { label: "Vacation days per year", value: vacationDaysPerYear, onChange: handleInputChange(setVacationDaysPerYear) }),
+                            React.createElement('div', { className: "flex items-center justify-center space-x-4 pt-4" },
+                                React.createElement('button', { onClick: calculate, style: { backgroundColor: '#3253F9' }, className: "text-white px-4 py-2 rounded flex items-center space-x-2 hover:opacity-90" },
+                                    React.createElement('i', { className: "fas fa-play-circle" }),
+                                    React.createElement('span', null, 'Calculate')
+                                ),
+                                React.createElement('button', {
+                                    onClick: handleClear,
+                                    className: "px-4 py-2 rounded transition-colors",
+                                    style: { backgroundColor: '#C8CCE5', color: '#363F72' },
+                                    onMouseOver: (e) => e.currentTarget.style.backgroundColor = '#9EA5D1',
+                                    onMouseOut: (e) => e.currentTarget.style.backgroundColor = '#C8CCE5'
+                                }, 'Clear')
+                            )
+                        ),
+                        React.createElement('div', { className: "lg:col-span-3" },
+                            React.createElement('div', { style: { backgroundColor: '#233ED9' }, className: "text-white p-2 text-sm rounded-t-md flex justify-between items-center" },
+                                React.createElement('span', null, 'Result')
+                            ),
+                            React.createElement('div', { className: "bg-white shadow-md overflow-hidden rounded-b-md" },
+                                results ? React.createElement(ResultsTable, { results: results, currencyCode: currency.code }) : React.createElement('div', { className: "p-10 text-center", style: { color: '#4E5BA6' } }, 'Enter salary details to see results.')
+                            )
+                        )
+                    ),
+                    React.createElement('p', { className: "text-xs mt-6 max-w-4xl mx-auto", style: { color: '#3E4784' } },
+                        React.createElement('strong', null, 'Unadjusted'), ' column shows your pay breakdown assuming a full 52-week work year with no time off. The ',
+                        React.createElement('strong', null, 'Adjusted'), ' column provides a more realistic picture by first calculating your true annual earnings based on your work schedule minus paid holidays and vacation days. This adjusted annual salary is then averaged across all pay periods to show your effective rate.'
+                    )
+                )
+            );
+        };
+
+        // --- Mount the application to the DOM ---
+        const domNode = document.getElementById('salary-calculator-root');
+        if (domNode) {
+            const root = ReactDOM.createRoot(domNode);
+            root.render(React.createElement(App));
+        } else {
+            console.error('Could not find root element with id "salary-calculator-root" to mount the app.');
+        }
+
+    </script>
+
+</body>
+</html>
